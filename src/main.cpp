@@ -47,22 +47,62 @@ using lcd_color = color<typename lcd_type::pixel_type>;
 lcd_type lcd;
 uint8_t* bungee_otf_buffer;
 size_t bungee_otf_buffer_len;
-void draw_text(spoint16 loc, const open_font& fnt,const char* text, float scale, rgb_pixel<16> fg,rgb_pixel<16> bg) {
-  size16 text_size = (size16)fnt.measure_text((ssize16)lcd.dimensions(),{0,0},text,scale);
-  // just a little padding
-  text_size.width+=2;
-  text_size.height+=2;
-  using bt = bitmap<rgb_pixel<16>>;
-  uint8_t* buf = (uint8_t*)malloc(bt::sizeof_buffer(text_size));
-  if(nullptr==buf) {
-    return;
-  }
-  bt tmp(text_size,buf);
-  tmp.fill(tmp.bounds(),bg);
-  draw::text(tmp,(srect16)tmp.bounds(),{0,0},text,fnt,scale,fg);
-  draw::bitmap(lcd,srect16(loc,(spoint16)lcd.bounds().bottom_right()),tmp,tmp.bounds());
-  free(buf);
+ssize16 speed_size;
+char speed_buf[16];
+
+char* speed_text(int speed) {
+  gfx::helpers::clamp(speed,0,999);
+  itoa(speed,speed_buf,10);
+  return speed_buf;
 }
+
+void draw_speed(int speed,const char* units) {
+  using pt = typename lcd_type::pixel_type;
+  static const pt speed_col = color<pt>::black;
+  static const pt unit_col = color<pt>::red;
+  static const pt bg_col = color<pt>::white;
+  // reconstitute the font from the buffer
+  const_buffer_stream cbs(bungee_otf_buffer,bungee_otf_buffer_len);
+  open_font fnt;
+  open_font::open(&cbs,&fnt);
+  // refresh the speed buffer
+  speed_text(speed);
+  float spd_scale = fnt.scale(80);
+  ssize16 spd_size = fnt.measure_text({32767,32767},{0,0},speed_buf,spd_scale);
+  spd_size = spd_size.inflate(2,2);
+  float uni_scale = fnt.scale(40);
+  ssize16 uni_size = fnt.measure_text({32767,32767},{0,0},units,uni_scale);
+  uni_size=uni_size.inflate(2,2);
+  size16 bmp_size = size16(speed_size.width+uni_size.width,speed_size.height);
+  using bmp_type = bitmap<typename lcd_type::pixel_type>;
+  uint8_t* buf = (uint8_t*)malloc(
+        bmp_type::sizeof_buffer(bmp_size));
+  if(buf==nullptr) return;
+  bmp_type tmp(bmp_size,buf);
+  tmp.fill(tmp.bounds(),bg_col);
+  draw::text(tmp,srect16(speed_size.width-spd_size.width,0,tmp.bounds().x2,tmp.bounds().y2),{0,0},speed_buf,fnt,spd_scale,speed_col);
+  draw::text(tmp,srect16(bmp_size.width-uni_size.width,bmp_size.height-uni_size.height-8,tmp.bounds().x2,tmp.bounds().y2),{0,0},units,fnt,uni_scale,unit_col);
+  draw::bitmap(lcd,(srect16)lcd.bounds().offset(20,70).crop(lcd.bounds()),tmp,tmp.bounds());
+  free(buf);
+    
+}
+ssize16 compute_speed_size() {
+  const_buffer_stream cbs(bungee_otf_buffer,bungee_otf_buffer_len);
+  open_font fnt;
+  open_font::open(&cbs,&fnt);
+  float scale = fnt.scale(80);
+  char sz[5];
+  strcpy(sz,speed_text(888));
+  sz[3]=' ';
+  sz[4]=0;
+  ssize16 result= fnt.measure_text({32767,32767},{0,0},sz,scale);
+  return result.inflate(2,2);
+}
+
+
+int speed = 0;
+int speed_delta = 1;
+int speed_delay = 25;
 
 void setup() {
   Serial.begin(115200);
@@ -83,11 +123,7 @@ void setup() {
   file.readBytes((char*)bungee_otf_buffer,len);
   file.close();
   bungee_otf_buffer_len = len;
-  // setup is complete
-
-  // fill the screen
-  lcd.fill(lcd.bounds(),lcd_color::white);
-  // reconstitute the font from the buffer
+  // test the font to make sure it's good (avoiding checks later)
   const_buffer_stream cbs(bungee_otf_buffer,bungee_otf_buffer_len);
   open_font fnt;
   gfx_result r=open_font::open(&cbs,&fnt);
@@ -95,10 +131,26 @@ void setup() {
     Serial.println("Unable to load asset Bungee.otf. Halting.");
     while(true) delay(1000);
   }
+  // get the maximum size of the speed in the current font
+  speed_size = compute_speed_size();
+  // setup is complete
 
-  draw_text({10,10},fnt,"Hello world!",fnt.scale(40),lcd_color::indian_red,lcd_color::white);
+  // fill the screen
+  lcd.fill(lcd.bounds(),lcd_color::white);
+  
+  
+  
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  draw_speed(speed,"mph");
+  speed+=speed_delta;
+  if(speed<0) {
+    speed_delta=-speed_delta;
+    speed=speed_delta;
+  } else if(speed>200) {
+    speed_delta=-speed_delta;
+    speed=200-speed_delta;
+  }
+  delay(speed_delay);
 }
