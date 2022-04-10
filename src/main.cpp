@@ -47,13 +47,13 @@ using lcd_color = color<typename lcd_type::pixel_type>;
 lcd_type lcd;
 // if you change the font, you'll have to tweak
 // the code in draw_speed() to place it properly.
-const char* speed_font_path = "/Telegrama.otf";//"/Bungee.otf"; // "/Ubuntu.otf"
+const char* speed_font_path = "/Bungee.otf"; // "/Ubuntu.otf"; //"/Telegrama.otf";
 const char* speed_font_name = speed_font_path+1;
 uint8_t* speed_font_buffer;
 size_t speed_font_buffer_len;
 ssize16 speed_size;
 char speed_buf[16];
-
+int speed_threshold = 70;
 // copies a speed into an ascii
 // buffer, returning it
 char* speed_text(int speed) {
@@ -66,7 +66,8 @@ char* speed_text(int speed) {
 void draw_speed(int speed,const char* units) {
   using pt = typename lcd_type::pixel_type;
   static const pt speed_col = color<pt>::black;
-  static const pt unit_col = color<pt>::red;
+  static const pt speeding_col = color<pt>::indian_red;
+  static const pt unit_col = color<pt>::blue;
   static const pt bg_col = color<pt>::white;
   // reconstitute the font from the buffer
   const_buffer_stream cbs(speed_font_buffer,speed_font_buffer_len);
@@ -99,7 +100,7 @@ void draw_speed(int speed,const char* units) {
   // fill the background
   tmp.fill(tmp.bounds(),bg_col);
   // draw the speed text
-  draw::text(tmp,srect16(speed_size.width-spd_size.width,0,tmp.bounds().x2,tmp.bounds().y2),{0,0},speed_buf,fnt,spd_scale,speed_col);
+  draw::text(tmp,srect16(speed_size.width-spd_size.width,0,tmp.bounds().x2,tmp.bounds().y2),{0,0},speed_buf,fnt,spd_scale,speed>speed_threshold?speeding_col:speed_col);
   // draw the units text
   draw::text(tmp,srect16(bmp_size.width-uni_size.width,bmp_size.height-uni_size.height-8,tmp.bounds().x2,tmp.bounds().y2),{0,0},units,fnt,uni_scale,unit_col);
   // draw the bitmap to the screen
