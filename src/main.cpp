@@ -47,7 +47,7 @@ using lcd_color = color<typename lcd_type::pixel_type>;
 lcd_type lcd;
 // if you change the font, you'll have to tweak
 // the code in draw_speed() to place it properly.
-const char* speed_font_path = "/Bungee.otf"; // "/Ubuntu.otf"; //"/Telegrama.otf";
+const char* speed_font_path = "/Telegrama.otf"; //"/Bungee.otf"; // "/Ubuntu.otf";
 const char* speed_font_name = speed_font_path+1;
 uint8_t* speed_font_buffer;
 size_t speed_font_buffer_len;
