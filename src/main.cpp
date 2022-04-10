@@ -45,49 +45,74 @@ using lcd_type = ili9341<PIN_NUM_DC,
 
 using lcd_color = color<typename lcd_type::pixel_type>;
 lcd_type lcd;
-uint8_t* bungee_otf_buffer;
-size_t bungee_otf_buffer_len;
+// if you change the font, you'll have to tweak
+// the code in draw_speed() to place it properly.
+const char* speed_font_path = "/Bungee.otf"; // "/Ubuntu.otf"
+const char* speed_font_name = speed_font_path+1;
+uint8_t* speed_font_buffer;
+size_t speed_font_buffer_len;
 ssize16 speed_size;
 char speed_buf[16];
 
+// copies a speed into an ascii
+// buffer, returning it
 char* speed_text(int speed) {
   gfx::helpers::clamp(speed,0,999);
   itoa(speed,speed_buf,10);
   return speed_buf;
 }
 
+// draws the speed on the screen
 void draw_speed(int speed,const char* units) {
   using pt = typename lcd_type::pixel_type;
   static const pt speed_col = color<pt>::black;
   static const pt unit_col = color<pt>::red;
   static const pt bg_col = color<pt>::white;
   // reconstitute the font from the buffer
-  const_buffer_stream cbs(bungee_otf_buffer,bungee_otf_buffer_len);
+  const_buffer_stream cbs(speed_font_buffer,speed_font_buffer_len);
   open_font fnt;
   open_font::open(&cbs,&fnt);
   // refresh the speed buffer
   speed_text(speed);
+  // get the scale for the speed part
   float spd_scale = fnt.scale(80);
+  // measure it
   ssize16 spd_size = fnt.measure_text({32767,32767},{0,0},speed_buf,spd_scale);
+  // pad it a little
   spd_size = spd_size.inflate(2,2);
+  // get the scale for the units part
   float uni_scale = fnt.scale(40);
+  // measure it
   ssize16 uni_size = fnt.measure_text({32767,32767},{0,0},units,uni_scale);
+  // pad it
   uni_size=uni_size.inflate(2,2);
+  // our bitmap is the size of the *maximum* width of the speed, plus the units width
+  // and the height of the (maximum implied) height of the speed.
   size16 bmp_size = size16(speed_size.width+uni_size.width,speed_size.height);
   using bmp_type = bitmap<typename lcd_type::pixel_type>;
+  // allocate a buffer. malloc is faster than ps_malloc here
+  // note that we could be recycling a buffer, but we don't because KISS
   uint8_t* buf = (uint8_t*)malloc(
         bmp_type::sizeof_buffer(bmp_size));
   if(buf==nullptr) return;
   bmp_type tmp(bmp_size,buf);
+  // fill the background
   tmp.fill(tmp.bounds(),bg_col);
+  // draw the speed text
   draw::text(tmp,srect16(speed_size.width-spd_size.width,0,tmp.bounds().x2,tmp.bounds().y2),{0,0},speed_buf,fnt,spd_scale,speed_col);
+  // draw the units text
   draw::text(tmp,srect16(bmp_size.width-uni_size.width,bmp_size.height-uni_size.height-8,tmp.bounds().x2,tmp.bounds().y2),{0,0},units,fnt,uni_scale,unit_col);
+  // draw the bitmap to the screen
   draw::bitmap(lcd,(srect16)lcd.bounds().offset(20,70).crop(lcd.bounds()),tmp,tmp.bounds());
+  // we're done with the buffer.
   free(buf);
     
 }
+// computes the *maximum* size for the speed.
+// the speed text ends up right aligned to the region
+// indicated by this size
 ssize16 compute_speed_size() {
-  const_buffer_stream cbs(bungee_otf_buffer,bungee_otf_buffer_len);
+  const_buffer_stream cbs(speed_font_buffer,speed_font_buffer_len);
   open_font fnt;
   open_font::open(&cbs,&fnt);
   float scale = fnt.scale(80);
@@ -99,7 +124,7 @@ ssize16 compute_speed_size() {
   return result.inflate(2,2);
 }
 
-
+// variables for demo
 int speed = 0;
 int speed_delta = 1;
 int speed_delay = 25;
@@ -107,28 +132,34 @@ int speed_delay = 25;
 void setup() {
   Serial.begin(115200);
   SPIFFS.begin(false);
-  File file = SPIFFS.open("/Bungee.otf","rb");
+  File file = SPIFFS.open(speed_font_path,"rb");
   if(!file)  {
-    Serial.println("Asset Bungee.otf not found. Halting.");
+    Serial.printf("Asset %s not found. Halting.",speed_font_name);
     while(true) delay(1000);
   }
+  // get the file length
   file.seek(0,fs::SeekMode::SeekEnd);
   size_t len = file.position();
   file.seek(0);
-  bungee_otf_buffer = (uint8_t*)ps_malloc(len);
-  if(!bungee_otf_buffer)  {
-    Serial.println("Unable to allocate PSRAM for asset Bungee.otf. Halting.");
+  // allocate the buffer
+  speed_font_buffer = (uint8_t*)ps_malloc(len);
+  if(!speed_font_buffer)  {
+    Serial.printf("Unable to allocate PSRAM for asset %s. Halting.",speed_font_name);
     while(true) delay(1000);
   }
-  file.readBytes((char*)bungee_otf_buffer,len);
+  // copy the file into the buffer
+  file.readBytes((char*)speed_font_buffer,len);
+  // don't need the file anymore
   file.close();
-  bungee_otf_buffer_len = len;
+  speed_font_buffer_len = len;
   // test the font to make sure it's good (avoiding checks later)
-  const_buffer_stream cbs(bungee_otf_buffer,bungee_otf_buffer_len);
+  // first wrap the buffer w/ a stream
+  const_buffer_stream cbs(speed_font_buffer,speed_font_buffer_len);
   open_font fnt;
+  // attempt to open the font
   gfx_result r=open_font::open(&cbs,&fnt);
   if(r!=gfx_result::success) {
-    Serial.println("Unable to load asset Bungee.otf. Halting.");
+    Serial.printf("Unable to load asset %s. Halting.",speed_font_name);
     while(true) delay(1000);
   }
   // get the maximum size of the speed in the current font
@@ -137,8 +168,6 @@ void setup() {
 
   // fill the screen
   lcd.fill(lcd.bounds(),lcd_color::white);
-  
-  
   
 }
 
