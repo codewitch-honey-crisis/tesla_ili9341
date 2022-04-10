@@ -87,7 +87,7 @@ void draw_speed(int speed,const char* units) {
   // pad it
   uni_size=uni_size.inflate(2,2);
   // our bitmap is the size of the *maximum* width of the speed, plus the units width
-  // and the height of the (maximum implied) height of the speed.
+  // and the height of the (maximum implied) the speed text.
   size16 bmp_size = size16(speed_size.width+uni_size.width,speed_size.height);
   using bmp_type = bitmap<typename lcd_type::pixel_type>;
   // allocate a buffer. malloc is faster than ps_malloc here
