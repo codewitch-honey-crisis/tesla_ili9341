@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <tft_io.hpp>
 #include <ili9341.hpp>
+#include "tft_touch.hpp"
 #include <gfx_cpp14.hpp>
 #include <SPIFFS.h>
 using namespace arduino;
@@ -22,6 +23,12 @@ using namespace gfx;
 #define LCD_HEIGHT 320
 #define LCD_ROTATION 1
 
+#define TOUCH_HOST HSPI
+#define PIN_NUM_T_CLK 34
+#define PIN_NUM_T_CS 35
+#define PIN_NUM_T_MISO 36
+#define PIN_NUM_T_MOSI 37
+
 using bus_type = tft_spi_ex<LCD_HOST,
                             PIN_NUM_CS,
                             PIN_NUM_MOSI,
@@ -34,6 +41,13 @@ using bus_type = tft_spi_ex<LCD_HOST,
 #endif
 >;
 
+using touch_bus_type = tft_spi_ex<TOUCH_HOST,
+                            PIN_NUM_T_CS,
+                            PIN_NUM_T_MOSI,
+                            PIN_NUM_T_MISO,
+                            PIN_NUM_T_CLK,
+                            SPI_MODE0>;
+
 using lcd_type = ili9341<PIN_NUM_DC,
                         PIN_NUM_RST,
                         PIN_NUM_BKL,
@@ -43,8 +57,11 @@ using lcd_type = ili9341<PIN_NUM_DC,
                         LCD_WRITE_SPEED_PERCENT,
                         LCD_READ_SPEED_PERCENT>;
 
+using touch_type = tft_touch<touch_bus_type>;
+
 using lcd_color = color<typename lcd_type::pixel_type>;
 lcd_type lcd;
+touch_type touch;
 // if you change the font, you'll have to tweak
 // the code in draw_speed() to place it properly.
 const char* speed_font_path = "/Telegrama.otf"; //"/Bungee.otf"; // "/Ubuntu.otf";
@@ -183,4 +200,10 @@ void loop() {
     speed=200-speed_delta;
   }
   delay(speed_delay);
+  uint16_t x,y,z;
+  if(touch.raw_touch(&x,&y,&z)) {
+    Serial.printf("x: %d, y: %d, z: %d\n",(int)x,(int)y,(int)z);
+  } else {
+    Serial.println("Touch error");
+  }
 }
