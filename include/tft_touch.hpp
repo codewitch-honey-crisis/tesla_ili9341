@@ -1,85 +1,293 @@
 #pragma once
+#include <Arduino.h>
+#include <SPI.h>
 namespace arduino {
-    template<typename Bus,unsigned int TouchSpeedPercent=100>
-    struct tft_touch {
-        using bus_type = Bus;
-        constexpr static const float touch_speed_multiplier = TouchSpeedPercent/100.0;
-    private:
-        bool m_initialized;
-    public:
-        inline bool initialized() const {
-            return m_initialized;
+template <uint8_t SpiHost, int8_t PinCS>
+class tft_touch {
+    constexpr const static uint8_t spi_host = SpiHost;
+    constexpr const static int8_t pin_cs = PinCS;
+    struct calibration {
+        uint16_t width;
+        uint16_t height;
+        uint16_t x0;
+        uint16_t x1;
+        uint16_t y0;
+        uint16_t y1;
+        uint8_t rotate;
+        uint8_t invert_x;
+        uint8_t invert_y;
+    };
+    constexpr static const int z_threshold = 350;
+    bool m_initialized;
+    bool m_calibrated;
+    calibration m_calibration;
+    uint32_t m_press_time;
+    SPIClass m_spi;
+    SPISettings m_spi_settings;
+    static void init_calibration(calibration* out_cal) {
+        // just give it some values so it doesn't crash
+        out_cal->width = 320;
+        out_cal->height = 200;
+        out_cal->x0 = 300;
+        out_cal->x1 = 3600;
+        out_cal->y0 = 300;
+        out_cal->y1 = 3600;
+        out_cal->rotate = 1;
+        out_cal->invert_x = 2;
+        out_cal->invert_y = 0;
+    }
+    void translate_calibrated(uint16_t* out_x, uint16_t* out_y) {
+        if (!m_calibrated) return;
+        uint16_t x_tmp = *out_x, y_tmp = *out_y, xx, yy;
+        if (!m_calibration.rotate) {
+            xx = (x_tmp - m_calibration.x0) * m_calibration.width / m_calibration.x1;
+            yy = (y_tmp - m_calibration.y0) * m_calibration.height / m_calibration.y1;
+            if (m_calibration.invert_x)
+                xx = m_calibration.width - xx;
+            if (m_calibration.invert_y)
+                yy = m_calibration.height - yy;
+        } else {
+            xx = (y_tmp - m_calibration.x0) * m_calibration.width / m_calibration.x1;
+            yy = (x_tmp - m_calibration.y0) * m_calibration.height / m_calibration.y1;
+            if (m_calibration.invert_x)
+                xx = m_calibration.width - xx;
+            if (m_calibration.invert_y)
+                yy = m_calibration.height - yy;
         }
-        bool initialize() {
-            if(!m_initialized) {
-                if(!bus_type::initialize()) {
-                    return false;
-                }
-                m_initialized = true;
-            }
-            return true;
-        }
-        void deinitialize() {
-            if(m_initialized) {
-                bus_type::deinitialize();
-            }
-        }
-    private:
-        static inline void begin_touch() {
-            bus_type::dma_wait();
-            bus_type::set_speed_multiplier(touch_speed_multiplier);
-            bus_type::cs_low();
-            bus_type::begin_write();
-        }
-        static inline void end_touch() {
-            bus_type::end_write();
-            bus_type::cs_high();
-        }
-        static bool touch_point(uint16_t* out_x, uint16_t* out_y) {
-            begin_touch();
-            bus_type::write_raw8(0xD0);
-            bus_type::write_raw8(0);
-            bus_type::write_raw8(0xD0);
-            bus_type::write_raw8(0);
-            bus_type::write_raw8(0xD0);
-            bus_type::write_raw8(0);
-            bus_type::write_raw8(0xD0);
-            uint8_t tmp = bus_type::read_raw8();
-            tmp<<=5;
-            tmp|=0x1F & (bus_type::read_write_raw8(0x90)>>3);
-            *out_x=tmp;
-            bus_type::write_raw8(0);
-            bus_type::write_raw8(0x90);
-            bus_type::write_raw8(0);
-            bus_type::write_raw8(0x90);
-            bus_type::write_raw8(0);
-            bus_type::write_raw8(0x90);
-            tmp = bus_type::read_raw8();
-            tmp<<=5;
-            tmp|=0x1F & (bus_type::read_raw8()>>3);
-            *out_y=tmp;
-            end_touch();
-            return true;
-        }
-        static bool touch_pressure(uint16_t* out_z) {
-            begin_touch();
-            int16_t tmp = 0xFFF;
-            bus_type::write_raw8(0xB0);
-            tmp+=int16_t(bus_type::read_write_raw16(0xC0))>>3;
-            tmp-=int16_t(bus_type::read_write_raw16(0))>>3;
-            end_touch();
-            *out_z = (uint16_t)tmp;
-            return true;
-        }
-    public:
-        bool raw_touch(uint16_t* out_x, uint16_t* out_y, uint16_t *out_z) {
-            initialize();
-            if(touch_pressure(out_z)) {
-                if(touch_point(out_x,out_y)) {
-                    return true;
-                }
-            }
+        *out_x = xx;
+        *out_y = yy;
+    }
+    bool touch_internal(uint16_t* x, uint16_t* y, uint16_t threshold) {
+        if (!initialize()) {
             return false;
         }
-    };
-}
+        constexpr static const int _RAWERR = 20;  // Deadband error allowed in successive position samples
+        uint16_t x_tmp, y_tmp, x_tmp2, y_tmp2;
+
+        // Wait until pressure stops increasing to debounce pressure
+        uint16_t z1 = 1;
+        uint16_t z2 = 0;
+        while (z1 > z2) {
+            z2 = z1;
+            raw_z(&z1);
+            delay(1);
+        }
+
+        if (z1 <= threshold) return false;
+
+        raw_xy(&x_tmp, &y_tmp);
+
+        delay(1);  // Small delay to the next sample
+        uint16_t tmp;
+        raw_z(&tmp);
+        if (tmp <= threshold) return false;
+
+        delay(2);  // Small delay to the next sample
+        raw_xy(&x_tmp2, &y_tmp2);
+
+        if (abs(x_tmp - x_tmp2) > _RAWERR) return false;
+        if (abs(y_tmp - y_tmp2) > _RAWERR) return false;
+
+        *x = x_tmp;
+        *y = y_tmp;
+
+        return true;
+    }
+   public:
+    tft_touch() : m_initialized(false), m_calibrated(false), m_press_time(0), m_spi(spi_host) {
+        m_spi_settings._bitOrder = MSBFIRST;
+        m_spi_settings._clock = uint32_t(2.5 * 1000 * 1000);
+        m_spi_settings._dataMode = SPI_MODE0;
+        init_calibration(&m_calibration);
+    }
+    bool initialize() {
+        if (!m_initialized) {
+            pinMode(pin_cs, OUTPUT);
+            digitalWrite(pin_cs, HIGH);
+            m_spi.begin();
+            m_calibrated = false;
+            init_calibration(&m_calibration);
+            m_press_time = 0;
+            m_initialized = true;
+        }
+        return m_initialized;
+    }
+    inline bool initialized() const {
+        return m_initialized;
+    }
+    inline bool calibrated() const {
+        return m_calibrated;
+    }
+
+    bool raw_xy(uint16_t* out_x, uint16_t* out_y) {
+        if (!initialize()) {
+            return false;
+        }
+        uint16_t tmp;
+        m_spi.beginTransaction(m_spi_settings);
+        digitalWrite(pin_cs, LOW);
+        m_spi.transfer(0xd0);  // Start new YP conversion
+        m_spi.transfer(0);     // Read first 8 bits
+        m_spi.transfer(0xd0);  // Read last 8 bits and start new YP conversion
+        m_spi.transfer(0);     // Read first 8 bits
+        m_spi.transfer(0xd0);  // Read last 8 bits and start new YP conversion
+        m_spi.transfer(0);     // Read first 8 bits
+        m_spi.transfer(0xd0);  // Read last 8 bits and start new YP conversion
+
+        tmp = m_spi.transfer(0);  // Read first 8 bits
+        tmp = tmp << 5;
+        tmp |= 0x1f & (m_spi.transfer(0x90) >> 3);  // Read last 8 bits and start new XP conversion
+        *out_x = tmp;
+        m_spi.transfer(0);     // Read first 8 bits
+        m_spi.transfer(0x90);  // Read last 8 bits and start new XP conversion
+        m_spi.transfer(0);     // Read first 8 bits
+        m_spi.transfer(0x90);  // Read last 8 bits and start new XP conversion
+        m_spi.transfer(0);     // Read first 8 bits
+        m_spi.transfer(0x90);  // Read last 8 bits and start new XP conversion
+
+        tmp = m_spi.transfer(0);  // Read first 8 bits
+        tmp = tmp << 5;
+        tmp |= 0x1f & (m_spi.transfer(0) >> 3);  // Read last 8 bits
+        *out_y = tmp;
+
+        m_spi.endTransaction();
+        digitalWrite(pin_cs, HIGH);
+        return true;
+    }
+    bool raw_z(uint16_t* out_z) {
+        if (!initialize()) {
+            return false;
+        }
+        m_spi.beginTransaction(m_spi_settings);
+        digitalWrite(pin_cs, LOW);
+        int16_t tmp = 0xFFF;
+        m_spi.transfer(0xB0);
+        tmp += m_spi.transfer16(0xC0) >> 3;
+        tmp -= m_spi.transfer16(0) >> 3;
+        m_spi.endTransaction();
+        digitalWrite(pin_cs, HIGH);
+        *out_z = (uint16_t)tmp;
+        return true;
+    }
+    
+    bool calibrated_xy(uint16_t* out_x, uint16_t* out_y, uint16_t threshold=z_threshold) {
+        if(!initialize()) {
+            return false;
+        }
+        if(!m_calibrated) {
+            return false;
+        }
+        
+        uint16_t x_tmp, y_tmp;
+
+        if (threshold < 20) threshold = 20;
+        if (m_press_time > millis()) threshold = 20;
+
+        uint8_t n = 5;
+        uint8_t valid = 0;
+        while (n--) {
+            if (touch_internal(&x_tmp, &y_tmp, threshold)) valid++;
+            ;
+        }
+
+        if (valid < 1) {
+            m_press_time = 0;
+            return false;
+        }
+
+        m_press_time = millis() + 50;
+
+        translate_calibrated(&x_tmp, &y_tmp);
+
+        if (x_tmp >= m_calibration.width || y_tmp >= m_calibration.height) {
+            return false;
+        }
+
+        *out_x = x_tmp;
+        *out_y = y_tmp;
+        return valid;
+    }
+    bool calibrate_touch(uint16_t* out_x, uint16_t* out_y,size_t attempts = 8) {
+        if(!initialize()) {
+            return false;
+        }
+        uint16_t x_tmp, y_tmp;
+        uint16_t xa=0,ya=0;
+        // average 8 samples
+        for (uint8_t j = 0; j < attempts; j++) {
+            // Use a lower detect threshold as corners tend to be less sensitive
+            while (!touch_internal(&x_tmp, &y_tmp, z_threshold / 2))
+                ;
+            xa += x_tmp;
+            ya += y_tmp;
+        }
+        *out_x = (int)(xa / attempts);
+        *out_y = (int)(ya / attempts);
+        return true;
+    }
+    // values are x,y|x,y|x,y|x,y top-left, bottom-left, top-right, bottom-right
+    // TODO: should be clockwise
+    bool calibrate(uint16_t screen_width,uint16_t screen_height,int16_t* values) {
+        /*
+        constexpr static const size_t top_left_x = 0;
+        constexpr static const size_t top_left_y = 1;
+        constexpr static const size_t bottom_left_x = 2;
+        constexpr static const size_t bottom_left_y = 3;
+        constexpr static const size_t top_right_x = 4;
+        constexpr static const size_t top_right_y = 5;
+        constexpr static const size_t bottom_right_x = 6;
+        constexpr static const size_t bottom_right_y = 7;
+        */
+        if (values == nullptr || screen_width == 0 || screen_height==0) {
+            return false;
+        }
+        if (!initialize()) {
+            return false;
+        }
+        m_calibration.width = screen_width;
+        m_calibration.height = screen_height;
+        m_calibration.rotate = false;
+        if (abs(values[0] - values[2]) > abs(values[1] - values[3])) {
+            m_calibration.rotate = true;
+            Serial.println("rotated in calibration");
+            m_calibration.x0 = (values[1] + values[3]) / 2;  // calc min x
+            m_calibration.x1 = (values[5] + values[7]) / 2;  // calc max x
+            m_calibration.y0 = (values[0] + values[4]) / 2;  // calc min y
+            m_calibration.y1 = (values[2] + values[6]) / 2;  // calc max y
+        } else {
+            m_calibration.x0 = (values[0] + values[2]) / 2;  // calc min x
+            m_calibration.x1 = (values[4] + values[6]) / 2;  // calc max x
+            m_calibration.y0 = (values[1] + values[5]) / 2;  // calc min y
+            m_calibration.y1 = (values[3] + values[7]) / 2;  // calc max y
+        }
+
+        // in addition, the touch screen axis could be in the opposite direction of the TFT axis
+        m_calibration.invert_x = false;
+        if (m_calibration.x0 > m_calibration.x1) {
+            values[0] = m_calibration.x0;
+            m_calibration.x0 = m_calibration.x1;
+            m_calibration.x1 = values[0];
+            m_calibration.invert_x = true;
+        }
+        m_calibration.invert_y = false;
+        if (m_calibration.y0 > m_calibration.y1) {
+            values[0] = m_calibration.y0;
+            m_calibration.y0 = m_calibration.y1;
+            m_calibration.y1 = values[0];
+            m_calibration.invert_y = true;
+        }
+
+        // pre calculate
+        m_calibration.x1 -= m_calibration.x0;
+        m_calibration.y1 -= m_calibration.y0;
+
+        if (m_calibration.x0 == 0) m_calibration.x0 = 1;
+        if (m_calibration.x1 == 0) m_calibration.x1 = 1;
+        if (m_calibration.y0 == 0) m_calibration.y0 = 1;
+        if (m_calibration.y1 == 0) m_calibration.y1 = 1;
+
+        m_calibrated = true;
+        return true;
+    }
+};
+}  // namespace arduino

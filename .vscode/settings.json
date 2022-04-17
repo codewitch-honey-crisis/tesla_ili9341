@@ -1,0 +1,18 @@
+{
+    "files.associations": {
+        "functional": "cpp",
+        "memory": "cpp",
+        "sstream": "cpp",
+        "*.tcc": "cpp",
+        "string": "cpp",
+        "exception": "cpp",
+        "cmath": "cpp",
+        "fstream": "cpp",
+        "iomanip": "cpp",
+        "istream": "cpp",
+        "new": "cpp",
+        "ostream": "cpp",
+        "tuple": "cpp",
+        "typeinfo": "cpp"
+    }
+}

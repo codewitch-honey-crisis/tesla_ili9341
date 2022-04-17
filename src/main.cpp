@@ -1,52 +1,43 @@
 #include <Arduino.h>
+#include <SPI.h>
+#include <SPIFFS.h>
 #include <tft_io.hpp>
 #include <ili9341.hpp>
 #include "tft_touch.hpp"
 #include <gfx_cpp14.hpp>
-#include <SPIFFS.h>
+
 using namespace arduino;
 using namespace gfx;
 
 #define LCD_HOST    VSPI
 // change to your setup
-#define PIN_NUM_MISO 25
+#define PIN_NUM_MISO 19
 #define PIN_NUM_MOSI 23
-#define PIN_NUM_CLK  19
-#define PIN_NUM_CS   22
+#define PIN_NUM_CLK  18
+#define PIN_NUM_CS   5
 #define LCD_WRITE_SPEED_PERCENT 400 // 40MHz
 #define LCD_READ_SPEED_PERCENT 200 // 20MHz
-#define PIN_NUM_DC   21
-#define PIN_NUM_RST  18
-#define PIN_NUM_BKL 5
-#define LCD_BKL_HIGH false
+#define PIN_NUM_DC   2
+#define PIN_NUM_RST  4
+#define PIN_NUM_BKL 22
+#define LCD_BKL_HIGH true
 #define LCD_WIDTH 240
 #define LCD_HEIGHT 320
-#define LCD_ROTATION 1
+#define LCD_ROTATION 3
 
-#define TOUCH_HOST HSPI
-#define PIN_NUM_T_CLK 34
-#define PIN_NUM_T_CS 35
-#define PIN_NUM_T_MISO 36
-#define PIN_NUM_T_MOSI 37
+#define TOUCH_HOST VSPI
+#define PIN_NUM_T_CLK 18
+#define PIN_NUM_T_CS 15
+#define PIN_NUM_T_MISO 19
+#define PIN_NUM_T_MOSI 23
 
-using bus_type = tft_spi_ex<LCD_HOST,
+using bus_type = tft_spi<LCD_HOST,
                             PIN_NUM_CS,
-                            PIN_NUM_MOSI,
-                            PIN_NUM_MISO,
-                            PIN_NUM_CLK,
-                            SPI_MODE0,
-                            PIN_NUM_MISO<0
+                            SPI_MODE0
 #ifdef OPTIMIZE_DMA
                             ,(LCD_WIDTH*LCD_HEIGHT)*2+8
 #endif
 >;
-
-using touch_bus_type = tft_spi_ex<TOUCH_HOST,
-                            PIN_NUM_T_CS,
-                            PIN_NUM_T_MOSI,
-                            PIN_NUM_T_MISO,
-                            PIN_NUM_T_CLK,
-                            SPI_MODE0>;
 
 using lcd_type = ili9341<PIN_NUM_DC,
                         PIN_NUM_RST,
@@ -57,11 +48,13 @@ using lcd_type = ili9341<PIN_NUM_DC,
                         LCD_WRITE_SPEED_PERCENT,
                         LCD_READ_SPEED_PERCENT>;
 
-using touch_type = tft_touch<touch_bus_type>;
+//using touch_type = tft_touch<touch_bus_type>;
+using touch_type = tft_touch<TOUCH_HOST,PIN_NUM_T_CS>;
 
 using lcd_color = color<typename lcd_type::pixel_type>;
 lcd_type lcd;
 touch_type touch;
+
 // if you change the font, you'll have to tweak
 // the code in draw_speed() to place it properly.
 const char* speed_font_path = "/Telegrama.otf"; //"/Bungee.otf"; // "/Ubuntu.otf";
@@ -141,15 +134,102 @@ ssize16 compute_speed_size() {
   ssize16 result= fnt.measure_text({32767,32767},{0,0},sz,scale);
   return result.inflate(2,2);
 }
+void calibrate(bool write=true) {
+  touch.initialize();
+  File file;
+  if(write) {
+    file = SPIFFS.open("/calibration","wb");
+  }
+  
+  int16_t values[8];
+  uint16_t x,y;
+  srect16 sr(0,0,15,15);
+  ssize16 ssr(8,8);
+  // top left
+  lcd.fill(lcd.bounds(),lcd_color::white);
+  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.top_left()),lcd_color::sky_blue);
+  draw::filled_ellipse(lcd,sr,lcd_color::sky_blue);
+  while(!touch.calibrate_touch(&x,&y)) delay(1);
+  values[0]=x;values[1]=y;
+  if(write) {
+    file.write((uint8_t*)&x,2);
+    file.write((uint8_t*)&y,2);
+  }
+  lcd.fill(lcd.bounds(),lcd_color::white);
+  delay(1000); // debounce
 
+  // bottom left
+  sr.offset_inplace(0,lcd.dimensions().height-sr.height());
+  lcd.fill(lcd.bounds(),lcd_color::white);
+  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.x1,sr.y1+sr.height()/2),lcd_color::sky_blue);
+  draw::filled_ellipse(lcd,sr,lcd_color::sky_blue);
+  while(!touch.calibrate_touch(&x,&y)) delay(1);
+  values[2]=x;values[3]=y;
+  if(write) {
+    file.write((uint8_t*)&x,2);
+    file.write((uint8_t*)&y,2);
+  }
+  lcd.fill(lcd.bounds(),lcd_color::white);
+  delay(1000); // debounce
+  
+  sr=srect16(0,0,15,15);
+  // top right
+  sr.offset_inplace(lcd.dimensions().width-sr.width(),0);
+  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.x1+sr.width()/2,sr.y1),lcd_color::sky_blue);
+  draw::filled_ellipse(lcd,sr,lcd_color::sky_blue);
+  while(!touch.calibrate_touch(&x,&y)) delay(1);
+  values[4]=x;values[5]=y;
+  if(write) {
+    file.write((uint8_t*)&x,2);
+    file.write((uint8_t*)&y,2);
+  }
+  lcd.fill(lcd.bounds(),lcd_color::white);
+  delay(1000); // debounce
+  
+  // bottom right
+  sr.offset_inplace(0,lcd.dimensions().height-sr.height());
+  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.x1+sr.width()/2,sr.y1+sr.height()/2),lcd_color::sky_blue);
+  draw::filled_ellipse(lcd,sr,lcd_color::sky_blue);
+  while(!touch.calibrate_touch(&x,&y)) delay(1);
+  values[6]=x;values[7]=y;
+  if(write) {
+    file.write((uint8_t*)&x,2);
+    file.write((uint8_t*)&y,2);
+  }
+  lcd.fill(lcd.bounds(),lcd_color::white);
+  delay(1000); // debounce
+  touch.calibrate(lcd.dimensions().width,lcd.dimensions().height,values);
+  if(write) {
+    file.close();
+  }
+}
+bool read_calibration() {
+  if(SPIFFS.exists("/calibration")) {
+    File file = SPIFFS.open("/calibration","rb");
+    int16_t values[8];
+    uint16_t x,y;
+    for(int i = 0;i<8;i+=2) {
+      if(2!=file.readBytes((char*)&x,2)) { file.close(); return false; }
+      if(2!=file.readBytes((char*)&y,2)) { file.close(); return false; }
+      values[i]=x;
+      values[i+1]=y;
+    }
+    file.close();
+    return touch.calibrate(lcd.dimensions().width,lcd.dimensions().height,values);
+  }
+  return false;
+}
 // variables for demo
 int speed = 0;
 int speed_delta = 1;
-int speed_delay = 25;
-
+int speed_delay = 250;
+uint32_t speed_ts = 0;
 void setup() {
   Serial.begin(115200);
   SPIFFS.begin(false);
+  // fill the screen
+  lcd.fill(lcd.bounds(),lcd_color::white);
+
   File file = SPIFFS.open(speed_font_path,"rb");
   if(!file)  {
     Serial.printf("Asset %s not found. Halting.",speed_font_name);
@@ -159,6 +239,10 @@ void setup() {
   file.seek(0,fs::SeekMode::SeekEnd);
   size_t len = file.position();
   file.seek(0);
+  if(len==0) {
+    Serial.printf("Asset %s not found. Halting.",speed_font_name);
+    while(true) delay(1000);
+  }
   // allocate the buffer
   speed_font_buffer = (uint8_t*)ps_malloc(len);
   if(!speed_font_buffer)  {
@@ -182,28 +266,30 @@ void setup() {
   }
   // get the maximum size of the speed in the current font
   speed_size = compute_speed_size();
+  if(!read_calibration() || !touch.calibrated()) {
+    calibrate(true);
+  }
+    
   // setup is complete
 
-  // fill the screen
-  lcd.fill(lcd.bounds(),lcd_color::white);
   
+ 
 }
 
 void loop() {
-  draw_speed(speed,"mph");
-  speed+=speed_delta;
-  if(speed<0) {
-    speed_delta=-speed_delta;
-    speed=speed_delta;
-  } else if(speed>200) {
-    speed_delta=-speed_delta;
-    speed=200-speed_delta;
+  if(millis()-speed_ts>=speed_delay) {
+    draw_speed(speed,"mph");
+    speed+=speed_delta;
+    if(speed<0) {
+      speed_delta=-speed_delta;
+      speed=speed_delta;
+    } else if(speed>200) {
+      speed_delta=-speed_delta;
+      speed=200-speed_delta;
+    }
   }
-  delay(speed_delay);
-  uint16_t x,y,z;
-  if(touch.raw_touch(&x,&y,&z)) {
-    Serial.printf("x: %d, y: %d, z: %d\n",(int)x,(int)y,(int)z);
-  } else {
-    Serial.println("Touch error");
-  }
+  uint16_t x,y;
+  if(touch.calibrated_xy(&x,&y)) {
+    draw::filled_ellipse(lcd,srect16(spoint16(x,y),8),lcd_color::gray);
+  }  
 }
