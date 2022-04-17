@@ -38,6 +38,7 @@ using bus_type = tft_spi<LCD_HOST,
                             ,(LCD_WIDTH*LCD_HEIGHT)*2+8
 #endif
 >;
+//using touch_bus_type = tft_spi<TOUCH_HOST,PIN_NUM_T_CS,SPI_MODE0>;
 
 using lcd_type = ili9341<PIN_NUM_DC,
                         PIN_NUM_RST,
