@@ -2,9 +2,8 @@
 #include <Arduino.h>
 #include <SPI.h>
 namespace arduino {
-template <uint8_t SpiHost, int8_t PinCS>
+template <int8_t PinCS>
 class tft_touch {
-    constexpr const static uint8_t spi_host = SpiHost;
     constexpr const static int8_t pin_cs = PinCS;
     struct calibration {
         uint16_t width;
@@ -228,7 +227,8 @@ class tft_touch {
     // values are x,y|x,y|x,y|x,y top-left, bottom-left, top-right, bottom-right
     // TODO: should be clockwise
     bool calibrate(uint16_t screen_width,uint16_t screen_height,int16_t* values) {
-        /*
+        
+        /* TFT_eSPI order
         constexpr static const size_t top_left_x = 0;
         constexpr static const size_t top_left_y = 1;
         constexpr static const size_t bottom_left_x = 2;
@@ -238,6 +238,16 @@ class tft_touch {
         constexpr static const size_t bottom_right_x = 6;
         constexpr static const size_t bottom_right_y = 7;
         */
+        // clockwise from top-left order
+        constexpr static const size_t top_left_x = 0;
+        constexpr static const size_t top_left_y = 1;
+        constexpr static const size_t top_right_x = 2;
+        constexpr static const size_t top_right_y = 3;
+        constexpr static const size_t bottom_right_x = 4;
+        constexpr static const size_t bottom_right_y = 5;
+        constexpr static const size_t bottom_left_x = 6;
+        constexpr static const size_t bottom_left_y = 7;
+        
         if (values == nullptr || screen_width == 0 || screen_height==0) {
             return false;
         }
@@ -247,33 +257,32 @@ class tft_touch {
         m_calibration.width = screen_width;
         m_calibration.height = screen_height;
         m_calibration.rotate = false;
-        if (abs(values[0] - values[2]) > abs(values[1] - values[3])) {
+        if (abs(values[top_left_x] - values[bottom_left_x]) > abs(values[top_left_y] - values[bottom_left_y])) {
             m_calibration.rotate = true;
-            Serial.println("rotated in calibration");
-            m_calibration.x0 = (values[1] + values[3]) / 2;  // calc min x
-            m_calibration.x1 = (values[5] + values[7]) / 2;  // calc max x
-            m_calibration.y0 = (values[0] + values[4]) / 2;  // calc min y
-            m_calibration.y1 = (values[2] + values[6]) / 2;  // calc max y
+            m_calibration.x0 = (values[top_left_y] + values[bottom_left_y]) / 2;  // calc min x
+            m_calibration.x1 = (values[top_right_y] + values[bottom_right_y]) / 2;  // calc max x
+            m_calibration.y0 = (values[top_left_x] + values[top_right_x]) / 2;  // calc min y
+            m_calibration.y1 = (values[bottom_left_x] + values[bottom_right_x]) / 2;  // calc max y
         } else {
-            m_calibration.x0 = (values[0] + values[2]) / 2;  // calc min x
-            m_calibration.x1 = (values[4] + values[6]) / 2;  // calc max x
-            m_calibration.y0 = (values[1] + values[5]) / 2;  // calc min y
-            m_calibration.y1 = (values[3] + values[7]) / 2;  // calc max y
+            m_calibration.x0 = (values[top_left_x] + values[bottom_left_x]) / 2;  // calc min x
+            m_calibration.x1 = (values[top_right_x] + values[bottom_right_x]) / 2;  // calc max x
+            m_calibration.y0 = (values[top_left_y] + values[top_right_y]) / 2;  // calc min y
+            m_calibration.y1 = (values[bottom_left_y] + values[bottom_right_y]) / 2;  // calc max y
         }
 
         // in addition, the touch screen axis could be in the opposite direction of the TFT axis
         m_calibration.invert_x = false;
         if (m_calibration.x0 > m_calibration.x1) {
-            values[0] = m_calibration.x0;
+            values[top_left_x] = m_calibration.x0;
             m_calibration.x0 = m_calibration.x1;
-            m_calibration.x1 = values[0];
+            m_calibration.x1 = values[top_left_x];
             m_calibration.invert_x = true;
         }
         m_calibration.invert_y = false;
         if (m_calibration.y0 > m_calibration.y1) {
-            values[0] = m_calibration.y0;
+            values[top_left_x] = m_calibration.y0;
             m_calibration.y0 = m_calibration.y1;
-            m_calibration.y1 = values[0];
+            m_calibration.y1 = values[top_left_x];
             m_calibration.invert_y = true;
         }
 

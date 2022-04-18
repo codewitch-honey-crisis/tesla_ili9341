@@ -50,7 +50,7 @@ using lcd_type = ili9341<PIN_NUM_DC,
                         LCD_READ_SPEED_PERCENT>;
 
 //using touch_type = tft_touch<touch_bus_type>;
-using touch_type = tft_touch<TOUCH_HOST,PIN_NUM_T_CS>;
+using touch_type = tft_touch<PIN_NUM_T_CS>;
 
 using lcd_color = color<typename lcd_type::pixel_type>;
 lcd_type lcd;
@@ -158,11 +158,11 @@ void calibrate(bool write=true) {
   }
   lcd.fill(lcd.bounds(),lcd_color::white);
   delay(1000); // debounce
-
-  // bottom left
-  sr.offset_inplace(0,lcd.dimensions().height-sr.height());
-  lcd.fill(lcd.bounds(),lcd_color::white);
-  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.x1,sr.y1+sr.height()/2),lcd_color::sky_blue);
+  
+  // top right
+  sr=srect16(0,0,15,15);
+  sr.offset_inplace(lcd.dimensions().width-sr.width(),0);
+  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.x1+sr.width()/2,sr.y1),lcd_color::sky_blue);
   draw::filled_ellipse(lcd,sr,lcd_color::sky_blue);
   while(!touch.calibrate_touch(&x,&y)) delay(1);
   values[2]=x;values[3]=y;
@@ -173,10 +173,10 @@ void calibrate(bool write=true) {
   lcd.fill(lcd.bounds(),lcd_color::white);
   delay(1000); // debounce
   
+  // bottom right
   sr=srect16(0,0,15,15);
-  // top right
-  sr.offset_inplace(lcd.dimensions().width-sr.width(),0);
-  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.x1+sr.width()/2,sr.y1),lcd_color::sky_blue);
+  sr.offset_inplace(lcd.dimensions().width-sr.width(),lcd.dimensions().height-sr.height());
+  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.x1+sr.width()/2,sr.y1+sr.height()/2),lcd_color::sky_blue);
   draw::filled_ellipse(lcd,sr,lcd_color::sky_blue);
   while(!touch.calibrate_touch(&x,&y)) delay(1);
   values[4]=x;values[5]=y;
@@ -186,10 +186,12 @@ void calibrate(bool write=true) {
   }
   lcd.fill(lcd.bounds(),lcd_color::white);
   delay(1000); // debounce
-  
-  // bottom right
+
+  // bottom left
+  sr=srect16(0,0,15,15);
   sr.offset_inplace(0,lcd.dimensions().height-sr.height());
-  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.x1+sr.width()/2,sr.y1+sr.height()/2),lcd_color::sky_blue);
+  lcd.fill(lcd.bounds(),lcd_color::white);
+  draw::filled_rectangle(lcd,ssr.bounds().offset(sr.x1,sr.y1+sr.height()/2),lcd_color::sky_blue);
   draw::filled_ellipse(lcd,sr,lcd_color::sky_blue);
   while(!touch.calibrate_touch(&x,&y)) delay(1);
   values[6]=x;values[7]=y;
@@ -199,6 +201,7 @@ void calibrate(bool write=true) {
   }
   lcd.fill(lcd.bounds(),lcd_color::white);
   delay(1000); // debounce
+
   touch.calibrate(lcd.dimensions().width,lcd.dimensions().height,values);
   if(write) {
     file.close();
