@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 namespace arduino {
+// Controls an SPI TFT touch chip
 template <int8_t PinCS>
 class tft_touch {
     constexpr const static int8_t pin_cs = PinCS;
