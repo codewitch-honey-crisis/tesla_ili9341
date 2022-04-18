@@ -226,7 +226,7 @@ bool read_calibration() {
 // variables for demo
 int speed = 0;
 int speed_delta = 1;
-int speed_delay = 250;
+int speed_delay = 100;
 uint32_t speed_ts = 0;
 void setup() {
   Serial.begin(115200);
@@ -282,6 +282,7 @@ void setup() {
 
 void loop() {
   if(millis()-speed_ts>=speed_delay) {
+    speed_ts=millis();
     draw_speed(speed,"mph");
     speed+=speed_delta;
     if(speed<0) {
