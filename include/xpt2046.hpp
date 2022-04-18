@@ -4,7 +4,7 @@
 namespace arduino {
 // Controls an SPI TFT touch chip
 template <int8_t PinCS>
-class tft_touch {
+class xpt2046 {
     constexpr const static int8_t pin_cs = PinCS;
     struct calibration {
         uint16_t width;
@@ -94,7 +94,7 @@ class tft_touch {
         return true;
     }
    public:
-    tft_touch(SPIClass& spi) : m_initialized(false), m_calibrated(false), m_press_time(0), m_spi(spi) {
+    xpt2046(SPIClass& spi) : m_initialized(false), m_calibrated(false), m_press_time(0), m_spi(spi) {
         m_spi_settings._bitOrder = MSBFIRST;
         m_spi_settings._clock = uint32_t(2.5 * 1000 * 1000);
         m_spi_settings._dataMode = SPI_MODE0;

@@ -3,7 +3,7 @@
 #include <SPI.h>
 namespace arduino {
 template <typename Bus, unsigned int TouchSpeedPercent=25>
-class tft_touch final {
+class xpt2046 final {
     constexpr static const float touch_speed_multiplier = TouchSpeedPercent / 100.0;
     using bus = Bus;
     struct calibration final {
@@ -92,10 +92,10 @@ class tft_touch final {
         return true;
     }
    public:
-    tft_touch() : m_initialized(false), m_calibrated(false), m_press_time(0) {
+    xpt2046() : m_initialized(false), m_calibrated(false), m_press_time(0) {
         init_calibration(&m_calibration);
     }
-    ~tft_touch() {
+    ~xpt2046() {
         if(m_initialized) {
             bus::deinitialize();
         }

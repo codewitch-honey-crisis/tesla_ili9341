@@ -3,14 +3,16 @@
 #include <SPIFFS.h>
 #include <tft_io.hpp>
 #include <ili9341.hpp>
-#include "tft_touch.hpp"
+#include "xpt2046.hpp"
 #include <gfx_cpp14.hpp>
 
 using namespace arduino;
 using namespace gfx;
 
+// fixed to this setup
+// do not change
+// this is a wiring guide.
 #define LCD_HOST    VSPI
-// change to your setup
 #define PIN_NUM_MISO 19
 #define PIN_NUM_MOSI 23
 #define PIN_NUM_CLK  18
@@ -50,7 +52,7 @@ using lcd_type = ili9341<PIN_NUM_DC,
                         LCD_READ_SPEED_PERCENT>;
 
 //using touch_type = tft_touch<touch_bus_type>;
-using touch_type = tft_touch<PIN_NUM_T_CS>;
+using touch_type = xpt2046<PIN_NUM_T_CS>;
 
 using lcd_color = color<typename lcd_type::pixel_type>;
 lcd_type lcd;
@@ -58,7 +60,7 @@ touch_type touch(spi_container<TOUCH_HOST>::instance());
 
 // if you change the font, you'll have to tweak
 // the code in draw_speed() to place it properly.
-const char* speed_font_path = "/Telegrama.otf"; //"/Bungee.otf"; // "/Ubuntu.otf";
+const char* speed_font_path =  "/Ubuntu.ttf"; //"/Telegrama.otf"; // "/Bungee.otf";
 const char* speed_font_name = speed_font_path+1;
 uint8_t* speed_font_buffer;
 size_t speed_font_buffer_len;
@@ -99,7 +101,7 @@ void draw_speed(int speed,const char* units) {
   // pad it
   uni_size=uni_size.inflate(2,2);
   // our bitmap is the size of the *maximum* width of the speed, plus the units width
-  // and the height of the (maximum implied) the speed text.
+  // and the height of the speed text (maximum implied).
   size16 bmp_size = size16(speed_size.width+uni_size.width,speed_size.height);
   using bmp_type = bitmap<typename lcd_type::pixel_type>;
   // allocate a buffer. malloc is faster than ps_malloc here
@@ -135,6 +137,7 @@ ssize16 compute_speed_size() {
   ssize16 result= fnt.measure_text({32767,32767},{0,0},sz,scale);
   return result.inflate(2,2);
 }
+// calibrates the screen, optionally writing the calibration file to SPIFFS
 void calibrate(bool write=true) {
   touch.initialize();
   File file;
@@ -207,6 +210,7 @@ void calibrate(bool write=true) {
     file.close();
   }
 }
+// read the calibration from SPIFFS
 bool read_calibration() {
   if(SPIFFS.exists("/calibration")) {
     File file = SPIFFS.open("/calibration","rb");
@@ -273,11 +277,8 @@ void setup() {
   if(!read_calibration() || !touch.calibrated()) {
     calibrate(true);
   }
-    
   // setup is complete
 
-  
- 
 }
 
 void loop() {
@@ -296,5 +297,5 @@ void loop() {
   uint16_t x,y;
   if(touch.calibrated_xy(&x,&y)) {
     draw::filled_ellipse(lcd,srect16(spoint16(x,y),8),lcd_color::gray);
-  }  
+  }
 }
