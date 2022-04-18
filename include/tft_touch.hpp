@@ -22,7 +22,7 @@ class tft_touch {
     bool m_calibrated;
     calibration m_calibration;
     uint32_t m_press_time;
-    SPIClass m_spi;
+    SPIClass& m_spi;
     SPISettings m_spi_settings;
     static void init_calibration(calibration* out_cal) {
         // just give it some values so it doesn't crash
@@ -94,7 +94,7 @@ class tft_touch {
         return true;
     }
    public:
-    tft_touch() : m_initialized(false), m_calibrated(false), m_press_time(0), m_spi(spi_host) {
+    tft_touch(SPIClass& spi) : m_initialized(false), m_calibrated(false), m_press_time(0), m_spi(spi) {
         m_spi_settings._bitOrder = MSBFIRST;
         m_spi_settings._clock = uint32_t(2.5 * 1000 * 1000);
         m_spi_settings._dataMode = SPI_MODE0;

@@ -54,7 +54,7 @@ using touch_type = tft_touch<TOUCH_HOST,PIN_NUM_T_CS>;
 
 using lcd_color = color<typename lcd_type::pixel_type>;
 lcd_type lcd;
-touch_type touch;
+touch_type touch(spi_container<TOUCH_HOST>::instance());
 
 // if you change the font, you'll have to tweak
 // the code in draw_speed() to place it properly.
