@@ -99,6 +99,7 @@ class tft_touch {
         m_spi_settings._dataMode = SPI_MODE0;
         init_calibration(&m_calibration);
     }
+    // intiailizes the touch controller - will be called automatically
     bool initialize() {
         if (!m_initialized) {
             pinMode(pin_cs, OUTPUT);
@@ -111,13 +112,16 @@ class tft_touch {
         }
         return m_initialized;
     }
+    // indicates whether or not the controller has been initialized
     inline bool initialized() const {
         return m_initialized;
     }
+    // indicates whether or not the controller has been calibrated
     inline bool calibrated() const {
         return m_calibrated;
     }
-
+    // retrieves the raw x and y valuea from the controller
+    // NOTE: this always returns values, regardless of whether or not the screen is being touched
     bool raw_xy(uint16_t* out_x, uint16_t* out_y) {
         if (!initialize()) {
             return false;
@@ -153,6 +157,7 @@ class tft_touch {
         digitalWrite(pin_cs, HIGH);
         return true;
     }
+    // retrieves the raw z value from the controller
     bool raw_z(uint16_t* out_z) {
         if (!initialize()) {
             return false;
@@ -168,7 +173,8 @@ class tft_touch {
         *out_z = (uint16_t)tmp;
         return true;
     }
-    
+    // retrieves the calibrated x and y values if the screen was depressed by the specified threshold
+    // returns true if the screen was touched, or false if it wasn't
     bool calibrated_xy(uint16_t* out_x, uint16_t* out_y, uint16_t threshold=z_threshold) {
         if(!initialize()) {
             return false;
@@ -206,7 +212,9 @@ class tft_touch {
         *out_y = y_tmp;
         return valid;
     }
-    bool calibrate_touch(uint16_t* out_x, uint16_t* out_y,size_t attempts = 8) {
+    // retrieves a semi-debounced sampled average of the touch coordinates, uncalibrated
+    // used for touch calibration
+    bool calibrate_touch(uint16_t* out_x, uint16_t* out_y,size_t attempts = 8, uint16_t threshold = z_threshold / 2) {
         if(!initialize()) {
             return false;
         }
@@ -215,7 +223,7 @@ class tft_touch {
         // average 8 samples
         for (uint8_t j = 0; j < attempts; j++) {
             // Use a lower detect threshold as corners tend to be less sensitive
-            while (!touch_internal(&x_tmp, &y_tmp, z_threshold / 2))
+            while (!touch_internal(&x_tmp, &y_tmp, threshold))
                 ;
             xa += x_tmp;
             ya += y_tmp;
@@ -224,8 +232,10 @@ class tft_touch {
         *out_y = (int)(ya / attempts);
         return true;
     }
-    // values are x,y|x,y|x,y|x,y top-left, bottom-left, top-right, bottom-right
-    // TODO: should be clockwise
+    // Calibrates the screen using the indicated touch values
+    // Values are x,y|x,y|x,y|x,y top-left, top-right, bottom-right, bottom-left
+    // (clockwise from top-left). Touch values retrieved from using calibrate_touch()
+    // to sample the points at the corners of the screeen
     bool calibrate(uint16_t screen_width,uint16_t screen_height,int16_t* values) {
         
         /* TFT_eSPI order
